@@ -5,7 +5,6 @@ Crowdsourcing stable diffusion prompts from Twitch chat
 
 create a .env file
 ```
-```
 DREAM_STUDIO_API_KEY={{your_dream_studio_key}}
 ```
 
