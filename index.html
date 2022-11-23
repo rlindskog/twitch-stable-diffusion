@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crowd Art</title>
+    <style>
+      body {
+        font-family: "Lucida Console", monospace;
+      }
+      .image-container {
+        display: flex;
+        margin-bottom: 100px;
+      }
+      .image-container > * {
+        display: inline-block;
+      }
+      .image-container > p {
+        margin-left: 30px;
+        top: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1>Crowd Art</h1>
+      <h2 id="timer"></h2>
+      <h2>
+        Current prompt (use Twitch chat to add phrases to the prompt using the
+        "!p" command)
+      </h2>
+      <p id="prompt"></p>
+      <!-- <h2>Images</h2> -->
+      <div id="image-list-container"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/gh/tmijs/tmi.js@main/dist/tmi.min.js"></script>
+    <script async defer>
+      const INTERVAL = 15;
+
+      const client = new tmi.Client({
+        channels: ["rlindskog"],
+      });
+      client.connect();
+      client.connect().catch(console.error);
+
+      const sendPrompt = async (prompt = null) => {
+        const res = await fetch("http://localhost:3001/generate-image", {
+          body: JSON.stringify({ prompt }),
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+        const data = await res.json();
+        return data?.image ?? null;
+      };
+
+      const promptTag = document.getElementById("prompt");
+
+      let prompt = "";
+
+      const updatePromptText = (text = "") => {
+        prompt = text;
+        promptTag.innerText = prompt;
+      };
+
+      const imageListContainer = document.getElementById(
+        "image-list-container"
+      );
+
+      const createImg = (imgData) => {
+        const img = document.createElement("img");
+        img.src = `data:image/png;base64, ${imgData}`;
+        console.log("IMAGE", img);
+        return img;
+      };
+
+      let imagePending = false;
+      let nextPrompt = "";
+
+      const messageListener = (channel, tags, message, self) => {
+        if (self) return;
+
+        const isValidPrompt =
+          message.indexOf("!p ") === 0 || message.indexOf("!prompt ") === 0;
+        if (isValidPrompt) {
+          const promptVal =
+            message.split("!p ")?.[1] ?? message.split("!prompt ")?.[1];
+          if (promptVal && !prompt.includes(promptVal)) {
+            if (!imagePending) {
+              updatePromptText(
+                `${prompt}${prompt?.length ? ", " : ""}${promptVal}`
+              );
+            } else {
+              if (!nextPrompt.includes(promptVal))
+                nextPrompt = `${nextPrompt}${
+                  nextPrompt?.length ? ", " : ""
+                }${promptVal}`;
+            }
+          }
+        }
+      };
+
+      const generateImage = async () => {
+        if (prompt && !imagePending) {
+          imagePending = true;
+          try {
+            const image = await sendPrompt(prompt);
+            if (image) {
+              const generatedImage = createImg(image);
+              const previousPompt = document.createElement("p");
+              previousPompt.innerText = `Prompt: ${prompt}`;
+              const imageContainer = document.createElement("div");
+              imageContainer.classList.add("image-container");
+              imageContainer.appendChild(generatedImage);
+              imageContainer.appendChild(previousPompt);
+              imageContainer.appendChild(document.createElement("br"));
+              imageListContainer.prepend(imageContainer);
+            }
+          } finally {
+            if (nextPrompt) {
+              updatePromptText(nextPrompt);
+              nextPrompt = "";
+            } else {
+              updatePromptText("");
+            }
+            imagePending = false;
+          }
+        }
+      };
+
+      let countdown = INTERVAL;
+      const countdownEl = document.getElementById("timer");
+
+      const updateCountdown = (val) => {
+        countdown = val;
+        countdownEl.innerText = `Countdown: ${val} seconds`;
+      };
+      updateCountdown(INTERVAL);
+
+      setInterval(async () => {
+        const nextVal = countdown - 1;
+        if (nextVal === -1 && !imagePending && prompt) {
+          countdownEl.innerText = "Generating image...";
+          await generateImage();
+          updateCountdown(INTERVAL);
+        } else if (prompt && !imagePending) {
+          updateCountdown(countdown - 1);
+        }
+      }, 1000);
+
+      client.addListener("message", messageListener);
+    </script>
+  </body>
+</html>
